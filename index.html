@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Pellisnap">
+<meta name="theme-color" content="#1b1410">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icon-192.png">
+<title>Pellisnap</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="flash"></div>
+
+<main>
+
+  <!-- Réglage du voyage -->
+  <section id="sSetup" hidden>
+    <h1>Pellisnap</h1>
+    <p class="lead">Ton appareil instantané de voyage. Tu prends des photos pendant le séjour, et tu ne les revois qu'à la fin.</p>
+    <label>Début du voyage
+      <input type="date" id="dStart">
+    </label>
+    <label>Fin du voyage
+      <input type="date" id="dEnd">
+    </label>
+    <p id="setupErr" class="err" role="alert"></p>
+    <button id="bSave" class="btn">Enregistrer</button>
+    <button id="bCancelSetup" class="btn ghost" hidden>Annuler</button>
+    <p id="installHint" class="hint" hidden>Pour un stockage fiable : bouton Partager de Safari, puis « Sur l'écran d'accueil ». Ouvre ensuite l'app depuis l'icône.</p>
+  </section>
+
+  <!-- Avant le voyage -->
+  <section id="sWait" hidden>
+    <h1>Pellisnap</h1>
+    <p class="lead" id="waitText"></p>
+    <button id="bEditWait" class="btn ghost">Modifier les dates</button>
+    <p id="installHint2" class="hint" hidden>Pense à installer l'app sur l'écran d'accueil (Partager, puis « Sur l'écran d'accueil »).</p>
+  </section>
+
+  <!-- Appareil photo -->
+  <section id="sCam" hidden>
+    <div class="body">
+      <div class="top">
+        <span class="brand">PELLISNAP</span>
+        <span id="cnt" class="cnt">0</span>
+      </div>
+      <div class="vf">
+        <video id="video" playsinline muted autoplay></video>
+        <div id="camMsg" class="cammsg" hidden></div>
+      </div>
+      <div class="slot"><div id="eject" class="eject"></div></div>
+      <div id="filters" class="filters"></div>
+      <div class="row">
+        <button id="bFlash" class="flashbtn" aria-pressed="false">Flash : non</button>
+        <button id="bShoot" class="shoot" aria-label="Déclencher"></button>
+        <div class="spacer"></div>
+      </div>
+      <p id="camInfo" class="hint"></p>
+      <button id="bEdit" class="link">Dates du voyage</button>
+    </div>
+  </section>
+
+  <!-- Galerie (après le voyage) -->
+  <section id="sGal" hidden>
+    <h2>Ta pellicule est développée</h2>
+    <p id="galInfo" class="lead"></p>
+    <div class="box">
+      <h3>Enregistrer les photos</h3>
+      <p class="hint">« Photos » ouvre la feuille de partage : choisis « Enregistrer N images » pour les mettre dans l'app Photos. « ZIP » sert pour Fichiers ou un ordinateur. Chaque bouton se prépare au premier appui, puis s'active au second.</p>
+      <div id="batches"></div>
+    </div>
+    <div id="grid" class="grid"></div>
+    <button id="bMore" class="btn ghost" hidden>Voir plus</button>
+    <button id="bWipe" class="link danger">Tout supprimer de l'app</button>
+    <div id="viewer" hidden><img id="viewImg" alt=""></div>
+  </section>
+
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>
