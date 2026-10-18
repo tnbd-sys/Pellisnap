@@ -50,7 +50,7 @@
         <span class="brand">PELLISNAP</span>
         <span id="cnt" class="cnt">0</span>
       </div>
-      <div class="vf">
+      <div id="vf" class="vf port">
         <video id="video" playsinline muted autoplay></video>
         <div id="camMsg" class="cammsg" hidden></div>
       </div>
@@ -62,6 +62,11 @@
         <div class="spacer"></div>
       </div>
       <p id="camInfo" class="hint"></p>
+      <button id="bBackup" class="btn ghost small">Sauvegarde de secours</button>
+      <div id="backup" class="box" hidden>
+        <p class="hint">Enregistre un ZIP dans Fichiers (idéalement iCloud Drive). Les photos ne s'affichent pas. Chaque bouton se prépare au premier appui, puis s'active au second.</p>
+        <div id="backupBatches"></div>
+      </div>
       <button id="bEdit" class="link">Dates du voyage</button>
     </div>
   </section>

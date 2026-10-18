@@ -111,27 +111,30 @@ async function makeZip(files) { // files: [{ name, blob }]
 
 /* ============ Filtres vintage (traitement pixel) ============ */
 // FILTER-START
+// Les 3 premiers reprennent les styles proposés par l'appareil Timelens (Classique, Rétro, Noir et blanc),
+// d'après les descriptions publiées : neutre / teinte chaude + grain léger / fort contraste.
+// Les 2 derniers sont des extras.
 const FILTERS = {
-  instant: { n: 'Instant',      gain: [1.06, 1.00, 0.88], off: [8, 4, 0],    sat: 0.90, con: 1.05, bri: 1.00, fade: 22, vig: 0.35, grain: 14, css: 'sepia(.25) saturate(.9) contrast(1.05)' },
-  kodak:   { n: 'Kodak 80',     gain: [1.10, 1.00, 0.88], off: [6, 0, -4],   sat: 1.30, con: 1.12, bri: 1.02, fade: 10, vig: 0.25, grain: 12, css: 'sepia(.12) saturate(1.3) contrast(1.1)' },
-  fuji:    { n: 'Fuji froid',   gain: [0.92, 1.03, 1.10], off: [0, 6, 8],    sat: 0.95, con: 1.04, bri: 1.02, fade: 20, vig: 0.30, grain: 10, css: 'hue-rotate(-8deg) saturate(.95) brightness(1.02)' },
-  noir:    { n: 'Noir & grain', gain: [1, 1, 1],          off: [0, 0, 0],    sat: 0.00, con: 1.30, bri: 1.00, fade: 14, vig: 0.40, grain: 28, css: 'grayscale(1) contrast(1.3)' },
-  soleil:  { n: 'Soleil brûlé', gain: [1.12, 1.05, 0.82], off: [14, 10, -6],  sat: 1.05, con: 0.98, bri: 1.14, fade: 26, vig: 0.15, grain: 14, leak: 1, css: 'sepia(.35) brightness(1.15) saturate(1.1)' }
+  classique: { n: 'Classique',    gain: [1.00, 1.00, 1.00], off: [0, 0, 0],    sat: 1.00, con: 1.05, bri: 1.00, fade: 6,  vig: 0.12, grain: 4,  css: 'contrast(1.05)' },
+  retro:     { n: 'Rétro',        gain: [1.07, 1.00, 0.90], off: [6, 2, -2],   sat: 0.95, con: 1.05, bri: 1.00, fade: 14, vig: 0.22, grain: 8,  css: 'sepia(.22) saturate(.95) contrast(1.05)' },
+  noir:      { n: 'Noir & blanc', gain: [1, 1, 1],          off: [0, 0, 0],    sat: 0.00, con: 1.40, bri: 1.00, fade: 8,  vig: 0.30, grain: 14, css: 'grayscale(1) contrast(1.4)' },
+  soleil:    { n: 'Soleil',       gain: [1.12, 1.05, 0.82], off: [14, 10, -6], sat: 1.05, con: 0.98, bri: 1.14, fade: 26, vig: 0.15, grain: 14, leak: 1, css: 'sepia(.35) brightness(1.15) saturate(1.1)' },
+  froid:     { n: 'Froid',        gain: [0.92, 1.03, 1.10], off: [0, 6, 8],    sat: 0.95, con: 1.04, bri: 1.02, fade: 20, vig: 0.30, grain: 10, css: 'hue-rotate(-8deg) saturate(.95) brightness(1.02)' }
 };
 
-// data : Uint8ClampedArray RGBA d'une image carrée de côté S
-function applyFilter(data, S, f, flash) {
+// data : Uint8ClampedArray RGBA d'une image de W x H pixels
+function applyFilter(data, W, H, f, flash) {
   const con = f.con * (flash ? 1.08 : 1);
   const fk = f.fade / 255;
   const g0 = f.gain[0], g1 = f.gain[1], g2 = f.gain[2];
   const o0 = f.off[0], o1 = f.off[1], o2 = f.off[2];
   const MAXD = Math.SQRT2;
-  for (let y = 0; y < S; y++) {
-    const ny = (y / S - 0.5) * 2;
-    for (let x = 0; x < S; x++) {
-      const i = (y * S + x) * 4;
+  for (let y = 0; y < H; y++) {
+    const ny = (y / H - 0.5) * 2;
+    for (let x = 0; x < W; x++) {
+      const i = (y * W + x) * 4;
       let r = data[i], g = data[i + 1], b = data[i + 2];
-      const nx = (x / S - 0.5) * 2;
+      const nx = (x / W - 0.5) * 2;
       const dist = Math.min(1, Math.sqrt(nx * nx + ny * ny) / MAXD);
 
       r *= f.bri; g *= f.bri; b *= f.bri;
@@ -160,7 +163,7 @@ function applyFilter(data, S, f, flash) {
       r *= v; g *= v; b *= v;
 
       if (f.leak) { // fuite de lumière orangée à gauche et en bas
-        const lk = Math.max(0, 1 - x / (S * 0.35)) * 0.55 + Math.max(0, (y / S - 0.8) / 0.2) * 0.25;
+        const lk = Math.max(0, 1 - x / (W * 0.35)) * 0.55 + Math.max(0, (y / H - 0.8) / 0.2) * 0.25;
         r += 230 * lk; g += 115 * lk; b += 25 * lk;
       }
 
@@ -176,7 +179,7 @@ function applyFilter(data, S, f, flash) {
 /* ============ Etat ============ */
 let trip = null;           // { start: 'YYYY-MM-DD', end: 'YYYY-MM-DD' }
 let editing = false;
-let filterKey = 'instant';
+let filterKey = 'classique';
 let flashOn = false;
 let busy = false;
 let stream = null;
@@ -246,10 +249,36 @@ async function render() {
 }
 
 async function refreshCamInfo() {
-  const n = await countPhotos();
+  const keys = await allKeys();
+  const n = keys.length;
   $('cnt').textContent = n;
   const reveal = addDay(trip.end, 1);
-  $('camInfo').textContent = 'Photos visibles à partir du ' + fmtDate(reveal) + '.';
+  let t = 'Photos visibles à partir du ' + fmtDate(reveal) + '.';
+  if (n > 0) {
+    const b = await getBackup();
+    const saved = new Set((b && b.keys) || []);
+    const unsaved = keys.filter(k => !saved.has(k)).length;
+    if (unsaved === 0) {
+      t += '\nToutes les photos sont sauvegardées.';
+    } else {
+      t += '\n' + plural(unsaved, 'photo non sauvegardée', 'photos non sauvegardées') +
+        (b ? ' (dernière sauvegarde le ' + new Date(b.ts).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' }) + ').' : ' (aucune sauvegarde).');
+    }
+  }
+  $('camInfo').textContent = t;
+}
+
+/* Sauvegarde de secours : mémorise quelles photos ont été exportées en ZIP */
+async function getBackup() {
+  try { return (await tx('meta', 'readonly', s => s.get('backup'))) || null; } catch (e) { return null; }
+}
+async function markSaved(keys) {
+  try {
+    const b = (await getBackup()) || { keys: [] };
+    const set = new Set(b.keys);
+    keys.forEach(k => set.add(k));
+    await tx('meta', 'readwrite', s => s.put({ ts: Date.now(), keys: [...set] }, 'backup'));
+  } catch (e) {}
 }
 
 /* ============ Réglage des dates ============ */
@@ -350,16 +379,19 @@ $('bShoot').onclick = async () => {
       fl.className = 'on';
       await wait(110);
     }
-    const S = 1280;
+    // Format jetable 3:2, paysage ou portrait selon l'orientation du flux caméra
+    const land = v.videoWidth >= v.videoHeight;
+    const W = land ? 1536 : 1024, H = land ? 1024 : 1536;
     const c = document.createElement('canvas');
-    c.width = c.height = S;
+    c.width = W; c.height = H;
     const ctx = c.getContext('2d', { willReadFrequently: true });
-    const side = Math.min(v.videoWidth, v.videoHeight);
-    ctx.drawImage(v, (v.videoWidth - side) / 2, (v.videoHeight - side) / 2, side, side, 0, 0, S, S);
+    let sw = v.videoWidth, sh = v.videoHeight;
+    if (sw / sh > W / H) sw = sh * W / H; else sh = sw * H / W;
+    ctx.drawImage(v, (v.videoWidth - sw) / 2, (v.videoHeight - sh) / 2, sw, sh, 0, 0, W, H);
     if (flashOn) { fl.className = 'off'; }
 
-    const img = ctx.getImageData(0, 0, S, S);
-    applyFilter(img.data, S, FILTERS[filterKey], flashOn);
+    const img = ctx.getImageData(0, 0, W, H);
+    applyFilter(img.data, W, H, FILTERS[filterKey], flashOn);
     ctx.putImageData(img, 0, 0);
 
     const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.85));
@@ -395,7 +427,7 @@ async function renderGallery() {
   $('galInfo').textContent = galKeys.length
     ? plural(galKeys.length, 'photo', 'photos') + ' prises du ' + fmtDate(trip.start) + ' au ' + fmtDate(trip.end) + '.'
     : 'Aucune photo prise pendant ce voyage.';
-  buildBatches();
+  buildBatches($('batches'), galKeys, false);
   await showMore();
 }
 
@@ -472,36 +504,63 @@ function download(file) {
   setTimeout(() => URL.revokeObjectURL(u), 60000);
 }
 
-function buildBatches() {
-  const box = $('batches');
+// box : conteneur ; allK : clés triées ; zipOnly : sauvegarde de secours (ZIP seulement, sans bouton « Photos »)
+function buildBatches(box, allK, zipOnly) {
   box.innerHTML = '';
-  for (let i = 0; i < galKeys.length; i += BATCH) {
-    const keys = galKeys.slice(i, i + BATCH);
+  for (let i = 0; i < allK.length; i += BATCH) {
+    const keys = allK.slice(i, i + BATCH);
     const n = i / BATCH + 1;
     const row = document.createElement('div');
     row.className = 'batch';
     const lab = document.createElement('span');
     lab.textContent = 'Lot ' + n + ' · ' + (i + 1) + '–' + (i + keys.length);
-    const bp = document.createElement('button');
     const bz = document.createElement('button');
-    row.append(lab, bp, bz);
+    row.appendChild(lab);
+    if (!zipOnly) {
+      const bp = document.createElement('button');
+      row.appendChild(bp);
+      twoStep(bp, 'Photos',
+        async () => (await loadBatch(keys)).map(f => new File([f.blob], f.name, { type: 'image/jpeg' })),
+        async files => {
+          if (navigator.canShare && navigator.canShare({ files })) await navigator.share({ files });
+          else throw new Error('no-share');
+        });
+    }
+    row.appendChild(bz);
     box.appendChild(row);
-
-    twoStep(bp, 'Photos',
-      async () => (await loadBatch(keys)).map(f => new File([f.blob], f.name, { type: 'image/jpeg' })),
-      async files => {
-        if (navigator.canShare && navigator.canShare({ files })) await navigator.share({ files });
-        else throw new Error('no-share');
-      });
 
     twoStep(bz, 'ZIP',
       async () => new File([await makeZip(await loadBatch(keys))], 'pellisnap_lot' + n + '.zip', { type: 'application/zip' }),
       async file => {
         if (navigator.canShare && navigator.canShare({ files: [file] })) await navigator.share({ files: [file] });
         else download(file);
+        await markSaved(keys);
+        bz.textContent = 'Sauvegardé ✓';
+        if (!$('sCam').hidden) refreshCamInfo();
       });
   }
 }
+
+/* Filet de sécurité : sauvegarde ZIP pendant le voyage, sans afficher les photos */
+$('bBackup').onclick = async () => {
+  const p = $('backup');
+  if (!p.hidden) { p.hidden = true; return; }
+  const keys = (await allKeys()).sort((a, b) => a - b);
+  if (!keys.length) { alert('Aucune photo à sauvegarder pour l\'instant.'); return; }
+  buildBatches($('backupBatches'), keys, true);
+  p.hidden = false;
+};
+
+/* Viseur : format 3:2, paysage ou portrait selon le flux caméra */
+function updateVF() {
+  const v = $('video');
+  if (!v.videoWidth) return;
+  $('vf').className = 'vf ' + (v.videoWidth >= v.videoHeight ? 'land' : 'port');
+}
+$('video').addEventListener('loadedmetadata', updateVF);
+$('video').addEventListener('resize', updateVF);
+window.addEventListener('resize', updateVF);
+window.addEventListener('orientationchange', () => setTimeout(updateVF, 300));
 
 $('bWipe').onclick = async () => {
   if (!confirm('Supprimer toutes les photos de l\'app ? Vérifie d\'abord qu\'elles sont enregistrées dans Photos ou Fichiers.')) return;
