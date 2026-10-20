@@ -1,7 +1,7 @@
 // Service worker : l'app fonctionne hors ligne.
 // Stratégie : on sert le cache tout de suite, et on le met à jour en arrière-plan
 // (la nouvelle version s'applique à l'ouverture suivante).
-const V = 'pellisnap-v2';
+const V = 'pellisnap-v8';
 const ASSETS = [
   './',
   'index.html',

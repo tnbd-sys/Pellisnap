@@ -114,26 +114,51 @@ async function makeZip(files) { // files: [{ name, blob }]
 // Les 3 premiers reprennent les styles proposés par l'appareil Timelens (Classique, Rétro, Noir et blanc),
 // d'après les descriptions publiées : neutre / teinte chaude + grain léger / fort contraste.
 // Les 2 derniers sont des extras.
+// leak : [intensité, largeur] de la fuite de lumière orangée (à gauche et en bas).
 const FILTERS = {
   classique: { n: 'Classique',    gain: [1.00, 1.00, 1.00], off: [0, 0, 0],    sat: 1.00, con: 1.05, bri: 1.00, fade: 6,  vig: 0.12, grain: 4,  css: 'contrast(1.05)' },
   retro:     { n: 'Rétro',        gain: [1.07, 1.00, 0.90], off: [6, 2, -2],   sat: 0.95, con: 1.05, bri: 1.00, fade: 14, vig: 0.22, grain: 8,  css: 'sepia(.22) saturate(.95) contrast(1.05)' },
-  noir:      { n: 'Noir & blanc', gain: [1, 1, 1],          off: [0, 0, 0],    sat: 0.00, con: 1.40, bri: 1.00, fade: 8,  vig: 0.30, grain: 14, css: 'grayscale(1) contrast(1.4)' },
-  soleil:    { n: 'Soleil',       gain: [1.12, 1.05, 0.82], off: [14, 10, -6], sat: 1.05, con: 0.98, bri: 1.14, fade: 26, vig: 0.15, grain: 14, leak: 1, css: 'sepia(.35) brightness(1.15) saturate(1.1)' },
-  froid:     { n: 'Froid',        gain: [0.92, 1.03, 1.10], off: [0, 6, 8],    sat: 0.95, con: 1.04, bri: 1.02, fade: 20, vig: 0.30, grain: 10, css: 'hue-rotate(-8deg) saturate(.95) brightness(1.02)' }
+  noir:      { n: 'Noir & blanc', gain: [1, 1, 1],          off: [0, 0, 0],    sat: 0.00, con: 1.25, bri: 1.00, fade: 12, vig: 0.22, grain: 14, css: 'grayscale(1) contrast(1.25)' },
+  soleil:    { n: 'Soleil',       gain: [1.10, 1.00, 0.86], off: [12, 4, -2],  sat: 1.05, con: 1.00, bri: 1.08, fade: 20, vig: 0.15, grain: 14, leak: [0.38, 0.28], css: 'sepia(.3) brightness(1.1) saturate(1.1)' },
+  froid:     { n: 'Froid',        gain: [0.93, 1.00, 1.10], off: [0, 2, 8],    sat: 0.95, con: 1.04, bri: 1.02, fade: 16, vig: 0.30, grain: 10, css: 'hue-rotate(-8deg) saturate(.95) brightness(1.02)' }
 };
+
+// Exposition automatique : les scènes sombres sont remontées par un gamma,
+// vers une luminosité moyenne visée (TARGET), sans dépasser un exposant minimal (MIN_EXP).
+const TARGET = 92, MIN_EXP = 0.72;
+
+function exposureLut(data, W, H) {
+  let sum = 0, n = 0;
+  for (let y = 0; y < H; y += 4) {
+    for (let x = 0; x < W; x += 4) {
+      const i = (y * W + x) * 4;
+      sum += 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+      n++;
+    }
+  }
+  const m = Math.max(1, sum / n);
+  if (m >= TARGET) return null;
+  const e = Math.max(MIN_EXP, Math.log(TARGET / 255) / Math.log(m / 255));
+  const lut = new Uint8ClampedArray(256);
+  for (let v = 0; v < 256; v++) lut[v] = 255 * Math.pow(v / 255, e);
+  return lut;
+}
 
 // data : Uint8ClampedArray RGBA d'une image de W x H pixels
 function applyFilter(data, W, H, f, flash) {
+  const lut = exposureLut(data, W, H);
   const con = f.con * (flash ? 1.08 : 1);
   const fk = f.fade / 255;
   const g0 = f.gain[0], g1 = f.gain[1], g2 = f.gain[2];
   const o0 = f.off[0], o1 = f.off[1], o2 = f.off[2];
+  const leakAmp = f.leak ? f.leak[0] : 0, leakW = f.leak ? f.leak[1] : 1;
   const MAXD = Math.SQRT2;
   for (let y = 0; y < H; y++) {
     const ny = (y / H - 0.5) * 2;
     for (let x = 0; x < W; x++) {
       const i = (y * W + x) * 4;
       let r = data[i], g = data[i + 1], b = data[i + 2];
+      if (lut) { r = lut[r]; g = lut[g]; b = lut[b]; }
       const nx = (x / W - 0.5) * 2;
       const dist = Math.min(1, Math.sqrt(nx * nx + ny * ny) / MAXD);
 
@@ -162,8 +187,8 @@ function applyFilter(data, W, H, f, flash) {
       const v = 1 - f.vig * dist * dist;
       r *= v; g *= v; b *= v;
 
-      if (f.leak) { // fuite de lumière orangée à gauche et en bas
-        const lk = Math.max(0, 1 - x / (W * 0.35)) * 0.55 + Math.max(0, (y / H - 0.8) / 0.2) * 0.25;
+      if (leakAmp) { // fuite de lumière orangée à gauche et en bas
+        const lk = Math.max(0, 1 - x / (W * leakW)) * leakAmp + Math.max(0, (y / H - 0.8) / 0.2) * 0.25;
         r += 230 * lk; g += 115 * lk; b += 25 * lk;
       }
 
@@ -180,6 +205,8 @@ function applyFilter(data, W, H, f, flash) {
 let trip = null;           // { start: 'YYYY-MM-DD', end: 'YYYY-MM-DD' }
 let editing = false;
 let filterKey = 'classique';
+let fav = null;            // filtre favori (présélectionné à chaque ouverture)
+let facing = 'environment'; // 'environment' = caméra arrière, 'user' = selfie
 let flashOn = false;
 let busy = false;
 let stream = null;
@@ -315,7 +342,7 @@ async function startCam() {
   }
   try {
     stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1920 } },
+      video: { facingMode: { ideal: facing }, width: { ideal: 1920 }, height: { ideal: 1920 } },
       audio: false
     });
     const v = $('video');
@@ -339,6 +366,19 @@ document.addEventListener('visibilitychange', () => {
   else if (phase() === 'active' && !editing) startCam();
 });
 
+/* Préférences : filtre favori */
+async function loadPrefs() {
+  let p = null;
+  try { p = await tx('meta', 'readonly', s => s.get('prefs')); } catch (e) {}
+  if (!p) { try { p = JSON.parse(localStorage.getItem('pellisnap.prefs') || 'null'); } catch (e) {} }
+  if (p && p.fav && FILTERS[p.fav]) { fav = p.fav; filterKey = fav; }
+}
+async function savePrefs() {
+  const p = { fav };
+  try { localStorage.setItem('pellisnap.prefs', JSON.stringify(p)); } catch (e) {}
+  try { await tx('meta', 'readwrite', s => s.put(p, 'prefs')); } catch (e) {}
+}
+
 /* Filtres */
 function buildFilters() {
   const box = $('filters');
@@ -346,17 +386,43 @@ function buildFilters() {
   Object.keys(FILTERS).forEach(k => {
     const b = document.createElement('button');
     b.className = 'fbtn' + (k === filterKey ? ' on' : '');
-    b.textContent = FILTERS[k].n;
-    b.onclick = () => {
-      filterKey = k;
-      box.querySelectorAll('.fbtn').forEach(x => x.classList.remove('on'));
-      b.classList.add('on');
-      $('video').style.filter = FILTERS[k].css;
-    };
+    b.textContent = (k === fav ? '★ ' : '') + FILTERS[k].n;
+    b.onclick = () => { filterKey = k; buildFilters(); };
     box.appendChild(b);
   });
+  // Étoile : définit (ou retire) le filtre sélectionné comme favori
+  const star = document.createElement('button');
+  const isFav = fav === filterKey;
+  star.className = 'favbtn' + (isFav ? ' on' : '');
+  star.textContent = isFav ? '★' : '☆';
+  star.setAttribute('aria-label', isFav ? 'Retirer le filtre favori' : 'Définir ce filtre comme favori');
+  star.onclick = async () => { fav = fav === filterKey ? null : filterKey; await savePrefs(); buildFilters(); };
+  box.appendChild(star);
   $('video').style.filter = FILTERS[filterKey].css;
 }
+
+
+/* Selfie : bascule caméra arrière / avant */
+$('bSelfie').onclick = async () => {
+  if (busy) return;
+  facing = facing === 'user' ? 'environment' : 'user';
+  $('bSelfie').setAttribute('aria-pressed', String(facing === 'user'));
+  $('bSelfie').textContent = 'Selfie : ' + (facing === 'user' ? 'oui' : 'non');
+  updateVF();
+  await startCam();
+};
+
+/* Enregistrement des photos : ArrayBuffer plutôt que Blob (les Blob dans IndexedDB échouent parfois sur Safari) */
+function blobToBuffer(b) {
+  if (b.arrayBuffer) return b.arrayBuffer();
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result);
+    r.onerror = () => rej(r.error);
+    r.readAsArrayBuffer(b);
+  });
+}
+const recBlob = rec => rec.blob || new Blob([rec.buf], { type: rec.type || 'image/jpeg' });
 
 $('bFlash').onclick = () => {
   flashOn = !flashOn;
@@ -373,6 +439,7 @@ $('bShoot').onclick = async () => {
   if (!stream || !v.videoWidth) return;
   busy = true;
   $('bShoot').disabled = true;
+  let step = 'préparation';
   try {
     const fl = $('flash');
     if (flashOn) {
@@ -380,6 +447,7 @@ $('bShoot').onclick = async () => {
       await wait(110);
     }
     // Format jetable 3:2, paysage ou portrait selon l'orientation du flux caméra
+    step = 'capture';
     const land = v.videoWidth >= v.videoHeight;
     const W = land ? 1536 : 1024, H = land ? 1024 : 1536;
     const c = document.createElement('canvas');
@@ -390,13 +458,20 @@ $('bShoot').onclick = async () => {
     ctx.drawImage(v, (v.videoWidth - sw) / 2, (v.videoHeight - sh) / 2, sw, sh, 0, 0, W, H);
     if (flashOn) { fl.className = 'off'; }
 
+    step = 'filtre';
     const img = ctx.getImageData(0, 0, W, H);
     applyFilter(img.data, W, H, FILTERS[filterKey], flashOn);
     ctx.putImageData(img, 0, 0);
 
+    step = 'encodage';
     const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.85));
-    if (!blob) throw new Error('encodage');
-    await tx('photos', 'readwrite', s => s.add({ blob, ts: Date.now(), filter: filterKey, flash: flashOn }));
+    if (!blob) throw new Error('le navigateur n\'a pas produit d\'image');
+    const buf = await blobToBuffer(blob);
+
+    step = 'stockage';
+    await tx('photos', 'readwrite', s => s.add({
+      buf, type: 'image/jpeg', ts: Date.now(), filter: filterKey, flash: flashOn, selfie: facing === 'user'
+    }));
 
     await refreshCamInfo();
     const ej = $('eject');
@@ -404,7 +479,8 @@ $('bShoot').onclick = async () => {
     void ej.offsetWidth;
     ej.classList.add('go');
   } catch (e) {
-    alert('La photo n\'a pas pu être enregistrée. Réessaie.');
+    alert('La photo n\'a pas pu être enregistrée. Réessaie.\n\nDétail technique (étape : ' + step + ') :\n' +
+      (e && e.name ? e.name + ' : ' : '') + (e && e.message ? e.message : String(e)));
     $('flash').className = '';
   } finally {
     busy = false;
@@ -436,7 +512,7 @@ async function showMore() {
   for (const k of slice) {
     const rec = await getPhoto(k);
     if (!rec) continue;
-    const u = URL.createObjectURL(rec.blob);
+    const u = URL.createObjectURL(recBlob(rec));
     urls.push(u);
     const im = document.createElement('img');
     im.src = u;
@@ -462,7 +538,7 @@ async function loadBatch(keys) {
   const out = [];
   for (const k of keys) {
     const rec = await getPhoto(k);
-    if (rec) out.push({ name: photoName(rec, k), blob: rec.blob });
+    if (rec) out.push({ name: photoName(rec, k), blob: recBlob(rec) });
   }
   return out;
 }
@@ -555,7 +631,7 @@ $('bBackup').onclick = async () => {
 function updateVF() {
   const v = $('video');
   if (!v.videoWidth) return;
-  $('vf').className = 'vf ' + (v.videoWidth >= v.videoHeight ? 'land' : 'port');
+  $('vf').className = 'vf ' + (v.videoWidth >= v.videoHeight ? 'land' : 'port') + (facing === 'user' ? ' selfie' : '');
 }
 $('video').addEventListener('loadedmetadata', updateVF);
 $('video').addEventListener('resize', updateVF);
@@ -575,6 +651,7 @@ $('bWipe').onclick = async () => {
 document.addEventListener('contextmenu', e => { if (e.target.id !== 'viewImg') e.preventDefault(); });
 
 (async function init() {
+  await loadPrefs();
   buildFilters();
   await loadTrip();
   askPersist();
